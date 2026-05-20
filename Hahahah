@@ -1,0 +1,317 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings, Sparkles, Wand2, Zap, Palette, Coins, Ghost, X, Crosshair } from 'lucide-react';
+
+// --- Configuration & Data ---
+type Rarity = 'Common' | 'Rare' | 'Epic' | 'Legendary';
+
+interface PetType {
+  name: string;
+  emoji: string;
+  rarity: Rarity;
+  incomeRate: number;
+  sellPrice: number;
+}
+
+const PET_TYPES: PetType[] = [
+  { name: 'Trulimero', emoji: '🐱', rarity: 'Common', incomeRate: 5, sellPrice: 1000 },
+  { name: 'Bombardiro', emoji: '🐊', rarity: 'Common', incomeRate: 8, sellPrice: 1500 },
+  { name: 'Trippi Troppi', emoji: '🦏', rarity: 'Rare', incomeRate: 15, sellPrice: 5000 },
+  { name: 'Bombombini', emoji: '🦊', rarity: 'Rare', incomeRate: 20, sellPrice: 8000 },
+  { name: 'Lirili Larila', emoji: '🐘', rarity: 'Epic', incomeRate: 50, sellPrice: 20000 },
+  { name: 'Brr Brr Patapim', emoji: '🦆', rarity: 'Epic', incomeRate: 75, sellPrice: 35000 },
+  { name: 'Glorbo', emoji: '👾', rarity: 'Legendary', incomeRate: 200, sellPrice: 100000 },
+  { name: 'Tung Tung', emoji: '🥁', rarity: 'Legendary', incomeRate: 500, sellPrice: 500000 },
+];
+
+const SKINS = [
+  { name: 'Normal', color: '#a3a3a3' },
+  { name: 'Strawberry', color: '#f43f5e' },
+  { name: 'Meowl', color: '#8b5cf6' },
+  { name: 'Skibidi', color: '#0ea5e9' },
+  { name: 'Rainbow', color: 'linear-gradient(45deg, #f87171, #facc15, #4ade80, #60a5fa, #c084fc)' },
+  { name: 'Gold', color: '#eab308' },
+  { name: 'Divine', color: '#fdf08a' },
+];
+
+const RARITY_COLORS = {
+  Common: '#9ca3af',
+  Rare: '#3b82f6',
+  Epic: '#a855f7',
+  Legendary: '#f59e0b',
+};
+
+interface ActivePet extends PetType {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  skin: string;
+}
+
+export function SpawnerGame() {
+  const [pets, setPets] = useState<ActivePet[]>([]);
+  const [coins, setCoins] = useState(0);
+  const [totalSpawned, setTotalSpawned] = useState(0);
+  const [activeTab, setActiveTab] = useState<'spawner' | 'skins' | 'settings'>('spawner');
+  const [selectedSkin, setSelectedSkin] = useState('Normal');
+  const [isSpawning, setIsSpawning] = useState(false);
+  const [selectedPet, setSelectedPet] = useState<string | null>(null);
+  const [autoSpawn, setAutoSpawn] = useState(false);
+  const [showNames, setShowNames] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  const gameAreaRef = useRef<HTMLDivElement>(null);
+  const requestRef = useRef<number>();
+  const lastTimeRef = useRef<number>();
+
+  const formatMoney = (amount: number) => {
+    if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
+    if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}K`;
+    return `$${amount}`;
+  };
+
+  const spawnPet = () => {
+    if (pets.length >= 15) return;
+    setIsSpawning(true);
+    setTimeout(() => setIsSpawning(false), 200);
+    const randomPet = PET_TYPES[Math.floor(Math.random() * PET_TYPES.length)];
+    const newPet: ActivePet = {
+      ...randomPet,
+      id: Math.random().toString(36).substr(2, 9),
+      x: Math.random() * 80 + 10,
+      y: Math.random() * 80 + 10,
+      vx: (Math.random() - 0.5) * 0.1,
+      vy: (Math.random() - 0.5) * 0.1,
+      skin: selectedSkin
+    };
+    setPets(prev => [...prev, newPet]);
+    setTotalSpawned(prev => prev + 1);
+  };
+
+  useEffect(() => {
+    let interval: number;
+    if (autoSpawn) {
+      interval = window.setInterval(() => {
+        if (pets.length < 15) spawnPet();
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [autoSpawn, pets.length, selectedSkin]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setCoins(prev => prev + pets.reduce((acc, pet) => acc + pet.incomeRate, 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [pets]);
+
+  const updatePhysics = (time: number) => {
+    if (lastTimeRef.current != undefined) {
+      const deltaTime = time - lastTimeRef.current;
+      setPets(prevPets => prevPets.map(pet => {
+        let newX = pet.x + pet.vx * deltaTime;
+        let newY = pet.y + pet.vy * deltaTime;
+        let newVx = pet.vx;
+        let newVy = pet.vy;
+        if (newX <= 2 || newX >= 98) newVx *= -1;
+        if (newY <= 5 || newY >= 95) newVy *= -1;
+        newX = Math.max(2, Math.min(98, newX));
+        newY = Math.max(5, Math.min(95, newY));
+        return { ...pet, x: newX, y: newY, vx: newVx, vy: newVy };
+      }));
+    }
+    lastTimeRef.current = time;
+    requestRef.current = requestAnimationFrame(updatePhysics);
+  };
+
+  useEffect(() => {
+    requestRef.current = requestAnimationFrame(updatePhysics);
+    return () => cancelAnimationFrame(requestRef.current!);
+  }, []);
+
+  const handleSell = (pet: ActivePet) => {
+    setCoins(prev => prev + pet.sellPrice);
+    setPets(prev => prev.filter(p => p.id !== pet.id));
+    setSelectedPet(null);
+  };
+
+  const handleGrab = (pet: ActivePet) => {
+    setPets(prev => prev.filter(p => p.id !== pet.id));
+    setSelectedPet(null);
+  };
+
+  return (
+    <div style={{ width: '100vw', height: '100vh' }} className="overflow-hidden bg-[#09090b] text-white font-sans relative flex select-none">
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-10px) rotate(5deg); }
+        }
+        @keyframes coin-pop {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.2); color: #facc15; }
+          100% { transform: scale(1); }
+        }
+        .pet-anim { animation: float 3s ease-in-out infinite; }
+        .glass-panel {
+          background: rgba(24, 24, 27, 0.7);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .scanline {
+          width: 100%; height: 100px; z-index: 10;
+          position: absolute; pointer-events: none;
+          background: linear-gradient(0deg, rgba(0,0,0,0) 0%, rgba(34,197,94,0.1) 50%, rgba(0,0,0,0) 100%);
+          animation: scan 8s linear infinite;
+        }
+        @keyframes scan { 0% { top: -100px; } 100% { top: 100vh; } }
+      `}</style>
+
+      <div className="absolute inset-0 pointer-events-none" style={{
+        backgroundImage: 'linear-gradient(to right, #1f2937 1px, transparent 1px), linear-gradient(to bottom, #1f2937 1px, transparent 1px)',
+        backgroundSize: '40px 40px', opacity: 0.2
+      }} />
+      <div className="scanline" />
+
+      {/* Game World */}
+      <div ref={gameAreaRef} className="flex-1 relative overflow-hidden cursor-crosshair">
+        <div className="absolute top-4 left-4 z-50 flex gap-4">
+          <div className="glass-panel px-6 py-3 rounded-2xl flex items-center gap-3 shadow-lg shadow-black/50">
+            <Coins className="text-yellow-400 w-6 h-6" />
+            <span className="text-2xl font-black tracking-tight text-white" key={coins} style={{ animation: 'coin-pop 0.3s ease-out' }}>
+              {formatMoney(coins)}
+            </span>
+          </div>
+        </div>
+        <div className="absolute top-4 right-4 z-50">
+          <div className="glass-panel px-4 py-2 rounded-xl flex items-center gap-2 text-sm text-zinc-400 font-bold">
+            <Ghost className="w-4 h-4" />
+            SPAWNED: <span className="text-white">{totalSpawned}</span>
+          </div>
+        </div>
+
+        {pets.map((pet) => (
+          <div key={pet.id} className="absolute transition-transform cursor-pointer"
+            style={{ left: `${pet.x}%`, top: `${pet.y}%`, transform: 'translate(-50%, -50%)', zIndex: selectedPet === pet.id ? 40 : 10 }}>
+            {selectedPet === pet.id && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-32 glass-panel rounded-xl p-1 shadow-2xl z-50">
+                <button onClick={(e) => { e.stopPropagation(); handleGrab(pet); }}
+                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-white/10 rounded-lg flex justify-between items-center text-blue-400">
+                  GRAB
+                </button>
+                <div className="h-px bg-white/10 my-1" />
+                <button onClick={(e) => { e.stopPropagation(); handleSell(pet); }}
+                  className="w-full text-left px-3 py-2 text-sm font-bold hover:bg-white/10 rounded-lg flex justify-between items-center text-yellow-400">
+                  SELL <span className="opacity-75">{formatMoney(pet.sellPrice)}</span>
+                </button>
+              </div>
+            )}
+            <div className="relative group flex flex-col items-center pet-anim"
+              onClick={() => setSelectedPet(selectedPet === pet.id ? null : pet.id)}>
+              {showNames && (
+                <div className="absolute -top-6 whitespace-nowrap bg-black/80 px-2 py-0.5 rounded text-[10px] font-black tracking-wider opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                  style={{ color: RARITY_COLORS[pet.rarity] }}>{pet.name}</div>
+              )}
+              <div className="w-16 h-16 rounded-full flex items-center justify-center text-4xl border-2 transition-transform hover:scale-110"
+                style={{ backgroundColor: 'rgba(24,24,27,0.8)', borderColor: RARITY_COLORS[pet.rarity], boxShadow: `0 0 20px ${RARITY_COLORS[pet.rarity]}40` }}>
+                {pet.emoji}
+                {pet.skin !== 'Normal' && (
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border border-zinc-800"
+                    style={{ background: SKINS.find(s => s.name === pet.skin)?.color }} />
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Side Panel */}
+      <div className="w-[320px] glass-panel border-l border-white/10 flex flex-col z-50">
+        <div className="flex p-2 gap-1 border-b border-white/10 bg-black/20">
+          {[
+            { id: 'spawner', icon: Wand2, label: 'SPAWN' },
+            { id: 'skins', icon: Palette, label: 'SKINS' },
+            { id: 'settings', icon: Settings, label: 'CONFIG' }
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
+              className={`flex-1 py-3 flex flex-col items-center justify-center gap-1 rounded-lg text-xs font-black tracking-wider transition-all ${activeTab === tab.id ? 'bg-white/10 text-white' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'}`}>
+              <tab.icon className="w-5 h-5" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 p-6 overflow-y-auto">
+          {activeTab === 'spawner' && (
+            <div className="flex flex-col gap-6 h-full justify-center">
+              <div className="text-center mb-4">
+                <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-br from-purple-400 to-pink-600 uppercase italic transform -skew-x-6">
+                  Brainrot<br/>Spawner
+                </h2>
+                <p className="text-zinc-400 text-sm mt-2 font-bold uppercase tracking-widest">Active: {pets.length}/15</p>
+              </div>
+              <button onClick={spawnPet} disabled={pets.length >= 15}
+                className={`relative w-full aspect-square rounded-3xl flex flex-col items-center justify-center gap-4 transition-all duration-100 overflow-hidden ${
+                  pets.length >= 15
+                    ? 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
+                    : 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 hover:scale-105 active:scale-95 shadow-[0_0_40px_rgba(168,85,247,0.4)] text-white'
+                }`}>
+                <Zap className={`w-20 h-20 ${isSpawning ? 'scale-75' : 'scale-100'} transition-transform duration-200`} />
+                <span className="text-3xl font-black uppercase tracking-widest">
+                  {pets.length >= 15 ? 'MAX LIMIT' : 'SPAWN'}
+                </span>
+              </button>
+              <div className="bg-black/40 rounded-xl p-4 mt-auto">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-zinc-500 uppercase">Passive Income</span>
+                  <span className="text-sm font-black text-green-400">+{formatMoney(pets.reduce((a,p)=>a+p.incomeRate,0))}/s</span>
+                </div>
+                <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-500 w-full animate-pulse"></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'skins' && (
+            <div className="flex flex-col gap-3">
+              <h3 className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-2">Select Next Skin</h3>
+              {SKINS.map(skin => (
+                <button key={skin.name} onClick={() => setSelectedSkin(skin.name)}
+                  className={`flex items-center gap-4 p-3 rounded-xl transition-all ${selectedSkin === skin.name ? 'bg-white/10 ring-2 ring-white/20' : 'bg-black/20 hover:bg-white/5'}`}>
+                  <div className="w-8 h-8 rounded-full shadow-inner" style={{ background: skin.color }} />
+                  <span className="font-bold">{skin.name}</span>
+                  {selectedSkin === skin.name && <Sparkles className="w-4 h-4 ml-auto text-yellow-400" />}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <div className="flex flex-col gap-4">
+              <h3 className="text-xs font-black text-zinc-500 uppercase tracking-widest mb-2">Game Config</h3>
+              {[
+                { label: 'Auto-Spawn', desc: 'Spawn pets automatically', val: autoSpawn, set: setAutoSpawn, color: 'bg-green-500' },
+                { label: 'Show Names', desc: 'Display pet nameplates', val: showNames, set: setShowNames, color: 'bg-blue-500' },
+                { label: 'Sound Effects', desc: 'Audio feedback', val: soundEnabled, set: setSoundEnabled, color: 'bg-purple-500' },
+              ].map(s => (
+                <div key={s.label} className="bg-black/20 p-4 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold">{s.label}</div>
+                    <div className="text-xs text-zinc-400">{s.desc}</div>
+                  </div>
+                  <button onClick={() => s.set(!s.val)}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${s.val ? s.color : 'bg-zinc-700'}`}>
+                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${s.val ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
